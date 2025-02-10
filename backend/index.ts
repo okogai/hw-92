@@ -44,7 +44,7 @@ router.ws('/chat', (ws) => {
                     client.send(JSON.stringify({ type: 'USER_LIST', users: Array.from(activeConnections.values()) }));
                 });
 
-                const messages = await Message.find().sort({ timestamp: -1 }).limit(30);
+                const messages = await Message.find().limit(30);
                 ws.send(JSON.stringify({ type: 'MESSAGES', payload: messages }));
 
             } catch (error) {
@@ -57,9 +57,10 @@ router.ws('/chat', (ws) => {
                 username: payload.username,
                 message: payload.message,
             });
+
             await message.save();
 
-            Object.values(activeConnections).forEach(client => {
+            activeConnections.forEach((_, client) => {
                 client.send(JSON.stringify({ type: 'NEW_MESSAGE', payload: message }));
             });
         }
