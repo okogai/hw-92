@@ -5,6 +5,8 @@ import cors from 'cors';
 import { WebSocket } from 'ws';
 import mongoDb from "./mongoDb";
 import usersRouter from "./routers/users";
+import User from "./models/User";
+import Message from "./models/Message";
 
 const app = express();
 expressWs(app);
@@ -19,16 +21,64 @@ app.use(express.json());
 
 app.use('/users', usersRouter);
 
-const activeConnections: WebSocket[] = [];
+let activeConnections = new Map<WebSocket, string>();
 
-app.use(router);
+router.ws('/chat', (ws) => {
+    ws.on('message', async (message) => {
+        const { type, payload } = JSON.parse(message.toString());
 
-router.ws('/chat', (ws: WebSocket) => {
-    activeConnections.forEach((connection) => {
-        connection.send(JSON.stringify({ type: 'draw' }));
-    })
+        if (type === 'LOGIN') {
+            try {
+                const token = payload.token;
+
+                const user = await User.findOne({ token });
+
+                if (!user) {
+                    ws.send(JSON.stringify({ type: 'ERROR', message: 'No such user!' }));
+                    return;
+                }
+
+                activeConnections.set(ws, user.username);
+
+                activeConnections.forEach((_, client) => {
+                    client.send(JSON.stringify({ type: 'USER_LIST', users: Array.from(activeConnections.values()) }));
+                });
+
+                const messages = await Message.find().sort({ timestamp: -1 }).limit(30);
+                ws.send(JSON.stringify({ type: 'MESSAGES', payload: messages }));
+
+            } catch (error) {
+                ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid token' }));
+            }
+        }
+
+        if (type === 'MESSAGE') {
+            const message = new Message({
+                username: payload.username,
+                message: payload.message,
+            });
+            await message.save();
+
+            Object.values(activeConnections).forEach(client => {
+                client.send(JSON.stringify({ type: 'NEW_MESSAGE', payload: message }));
+            });
+        }
+    });
+
+    ws.on('close', () => {
+        const username = activeConnections.get(ws);
+
+        if (username) {
+            activeConnections.delete(ws);
+
+            activeConnections.forEach((_, client) => {
+                client.send(JSON.stringify({ type: 'USER_LIST', users: Array.from(activeConnections.values()) }));
+            });
+        }
+    });
 });
 
+app.use(router);
 
 const run = async () => {
     mongoose.set('strictQuery', false);
