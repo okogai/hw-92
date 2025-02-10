@@ -33,42 +33,56 @@ const Chat = () => {
   const [messageText, setMessageText] = useState('');
 
   useEffect(() => {
-    const socket = new WebSocket('ws://localhost:8000/chat');
-    setWs(socket);
+    setMessages([]);
+    setUsers([]);
+    const connectWebSocket = () => {
+      const socket = new WebSocket('ws://localhost:8000/chat');
+      setWs(socket);
 
-    if (user) {
-      socket.onopen = () => {
-        socket.send(
-          JSON.stringify({
-            type: 'LOGIN',
-            payload: { token: user.token }
-          })
-        );
+      if (user) {
+        socket.onopen = () => {
+          socket.send(
+            JSON.stringify({
+              type: 'LOGIN',
+              payload: { token: user.token }
+            })
+          );
+        };
+      }
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'USER_LIST') {
+          setUsers(data.users);
+        }
+        else if (data.type === 'MESSAGES') {
+          setMessages(data.payload);
+        }
+        else if (data.type === 'NEW_MESSAGE') {
+          setMessages(prev => [...prev, data.payload]);
+        }
       };
-    }
 
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      socket.onclose = () => {
+        console.log('WebSocket closed, reconnecting...');
+        connectWebSocket();
+      };
 
-      if (data.type === 'USER_LIST') {
-        setUsers(data.users);
-      }
-      else if (data.type === 'MESSAGES') {
-        setMessages(data.payload);
-      }
-      else if (data.type === 'NEW_MESSAGE') {
-        setMessages(prev => [...prev, data.payload]);
-      }
+      socket.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        socket.close();
+      };
     };
 
-    socket.onclose = () => {
-      console.log('WebSocket closed');
-    };
+    connectWebSocket();
 
     return () => {
-      socket.close();
+      if (ws) {
+        ws.close();
+      }
     };
-  }, []);
+  }, [user]);
 
   const handleSendMessage = () => {
     if (ws && messageText.trim() !== '' && user) {
@@ -77,6 +91,7 @@ const Chat = () => {
           type: 'MESSAGE',
           payload: {
             username: user.username,
+            token: user.token,
             message: messageText
           }
         })
@@ -118,7 +133,7 @@ const Chat = () => {
               mb: 2
             }}
           >
-            <Box sx={{ overflowY: 'scroll', maxHeight: '70vh' }} ref={messagesRef}>
+            <Box sx={{ overflowY: 'auto', maxHeight: '70vh' }} ref={messagesRef}>
               {messages.map((msg) => (
                 <Box key={msg._id} >
                   <Typography variant="subtitle2" sx={{fontWeight: 700}}>{msg.username}</Typography>

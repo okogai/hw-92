@@ -53,9 +53,23 @@ router.ws('/chat', (ws) => {
         }
 
         if (type === 'MESSAGE') {
+            const token = payload.token;
+
+            const user = await User.findOne({ token });
+
+            if (!token) {
+                ws.send(JSON.stringify({ type: 'ERROR', message: 'Not authorized!' }));
+                return;
+            }
+
+            if (!user) {
+                ws.send(JSON.stringify({ type: 'ERROR', message: 'No such user!' }));
+                return;
+            }
+
             const message = new Message({
                 username: payload.username,
-                message: payload.message,
+                message: payload.message
             });
 
             await message.save();
